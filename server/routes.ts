@@ -2,7 +2,7 @@ import { ObjectId } from "mongodb";
 
 import { Router, getExpressRouter } from "./framework/router";
 
-import { Authing, Friending, Posting, Sessioning } from "./app";
+import { Authing, EducationAndDIY, Entertainment, FashionAndBeauty, FoodAndCooking, Friending, HealthAndFitness, Lifestyle, Posting, Sessioning } from "./app";
 import { PostOptions } from "./concepts/posting";
 import { SessionDoc } from "./concepts/sessioning";
 import Responses from "./responses";
@@ -151,6 +151,132 @@ class Routes {
     const user = Sessioning.getUser(session);
     const fromOid = (await Authing.getUserByUsername(from))._id;
     return await Friending.rejectRequest(fromOid, user);
+  }
+
+  @Router.get("/collections")
+  async getDefaultCollections() {
+    // to be modified after implementing concepts that use these
+    return await [Lifestyle, HealthAndFitness, Entertainment, FoodAndCooking, FashionAndBeauty, EducationAndDIY];
+  }
+
+  // TODO
+  @Router.patch("/posts/:id")
+  // upvote a post
+  async qualityRatePost(session: SessionDoc, id: string) {
+    // if Authenticating.getUserRole((Posting.getPostOwner(p)).username) === ContentCreator
+    //     Posting.incrementQualityRating(p)
+  }
+
+  @Router.post("/follow")
+  async follow(to: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     if Authenticating.getUserRole(otheruser.username) === ContentCreator
+    //         Following.addFollower(user, otheruser)
+    //     else
+    //         Following.addRequest(user, otheruser)
+  }
+
+  @Router.get("/follow")
+  async getFollowers(session: SessionDoc) {
+    // if Authenticating.getUserRole(user.username) === ContentCreator
+    // Following.getFollowers(user)
+  }
+
+  @Router.get("/follow")
+  async getFollowings(session: SessionDoc) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //       Following.getFollowings(user)
+  }
+
+  @Router.post("/trackers")
+  async createTracker(name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     return Tracker-ing.makeTracker(user, name, shared)
+  }
+
+  @Router.post("/collections")
+  async createCollection(name: String) {
+    // if d
+    //     Collection-ing.newCollectionWithDeadline(user, parent, d, name)
+    // if not d
+    //     Collection-ing.newCollectionWithoutDeadline(user, parent, name)
+  }
+
+  @Router.post("/trackers/share")
+  async shareTracker(to: string, name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Tracker-ing.shareTracker(user, name, otheruser)
+  }
+
+  @Router.post("/collections/share")
+  async shareCollection(to: string, name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Collection-ing.shareCollection(user, name, otheruser)
+  }
+
+  @Router.post("/trackers/share")
+  async unshareTracker(from: string, name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Tracker-ing.unshareTracker(user, name, otheruser)
+  }
+
+  @Router.post("/collections/share")
+  async unshareCollection(from: string, name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Collection-ing.unshareCollection(user, name, otheruser)
+  }
+
+  @Router.delete("/trackers")
+  async deleteTracker(name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Tracker-ing.deleteTracker(user, name)
+    //     Leveling.updateLevel(user)
+  }
+
+  @Router.delete("/collections")
+  async deleteCollection(name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Collection-ing.deleteCollection(user, name)
+  }
+
+  @Router.patch("/trackers")
+  async checkTracker(name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Tracker-ing.checkDay(user, name)
+    //     Leveling.updateLevel(user)
+  }
+
+  @Router.patch("/trackers")
+  async uncheckTracker(name: String) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Tracker-ing.uncheckDay(user, name)
+    //     Leveling.updateLevel(user)
+  }
+
+  @Router.patch("/collections")
+  async addToCollection(name: String, p: string) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Collection-ing.addToCollection(User, name, p)
+    //     Summarizing.updateSummaries(Collection-ing.getUserDefaultCollectionSizes(user))
+    //     Leveling.updateLevel(user)
+  }
+
+  @Router.patch("/collections")
+  async updateCollectionDeadline(name: String, d: Date) {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Collection-ing.updateCollectionDeadline(user, name, d)
+  }
+
+  @Router.get("/creators")
+  async getAllContentCreators() {
+    // return Authenticating.getAllUsersWithRole(ContentCreator)
+  }
+
+  @Router.post("/explore")
+  async recommendContent() {
+    // if Authenticating.getUserRole(user.username) === RegularUser
+    //     Summarizing.updateIfDataChanged(Collection-ing.getUserDefaultCollectionSizes(user))
+    //     return findLowActivityCategory(Collection-ing.getUserDefaultCollectionSizes(user))
   }
 }
 
