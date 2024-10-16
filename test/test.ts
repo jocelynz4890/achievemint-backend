@@ -13,6 +13,7 @@ import type { SessionDoc } from "../server/concepts/sessioning";
 // Test mode must be set before importing the routes
 import { app } from "../server/routes";
 
+import { Role } from "concepts/authenticating";
 import db, { client } from "../server/db";
 if (db.databaseName !== "test-db") {
   throw new Error("Not connected to test database");
@@ -29,8 +30,8 @@ beforeEach(async () => {
   await db.dropDatabase();
 
   // Add some default users we can use
-  await app.createUser(getEmptySession(), "alice", "alice123");
-  await app.createUser(getEmptySession(), "bob", "bob123");
+  await app.createUser(getEmptySession(), "alice", "alice123", Role.ContentCreator);
+  await app.createUser(getEmptySession(), "bob", "bob123", Role.RegularUser);
 });
 
 // After all tests are done...
@@ -43,7 +44,7 @@ describe("Create a user and log in", () => {
   it("should create a user and log in", async () => {
     const session = getEmptySession();
 
-    const created = await app.createUser(session, "barish", "1234");
+    const created = await app.createUser(session, "barish", "1234", Role.RegularUser);
     assert(created.user);
     await assert.rejects(app.logIn(session, "barish", "123"));
     await app.logIn(session, "barish", "1234");
@@ -53,9 +54,9 @@ describe("Create a user and log in", () => {
   it("duplicate username should fail", async () => {
     const session = getEmptySession();
 
-    const created = await app.createUser(session, "barish", "1234");
+    const created = await app.createUser(session, "barish", "1234", Role.RegularUser);
     assert(created.user);
-    await assert.rejects(app.createUser(session, "barish", "1234"));
+    await assert.rejects(app.createUser(session, "barish", "1234", Role.RegularUser));
   });
 
   it("get invalid username should fail", async () => {

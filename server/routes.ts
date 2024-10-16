@@ -2,12 +2,14 @@ import { ObjectId } from "mongodb";
 
 import { Router, getExpressRouter } from "./framework/router";
 
-import { Authing, EducationAndDIY, Entertainment, FashionAndBeauty, FoodAndCooking, Friending, HealthAndFitness, Lifestyle, Posting, Sessioning } from "./app";
+import { Authing, Category, Collectioning, Friending, Leveling, Posting, Sessioning, Summarizing, Trackering } from "./app";
+import { Role } from "./concepts/authenticating";
 import { PostOptions } from "./concepts/posting";
 import { SessionDoc } from "./concepts/sessioning";
 import Responses from "./responses";
 
 import { z } from "zod";
+import { NotFoundError } from "./concepts/errors";
 
 /**
  * Web server routes for the app. Implements synchronizations between concepts.
@@ -33,9 +35,9 @@ class Routes {
   }
 
   @Router.post("/users")
-  async createUser(session: SessionDoc, username: string, password: string) {
+  async createUser(session: SessionDoc, username: string, password: string, role: Role) {
     Sessioning.isLoggedOut(session);
-    return await Authing.create(username, password);
+    return await Authing.create(username, password, role);
   }
 
   @Router.patch("/users/username")
@@ -47,7 +49,7 @@ class Routes {
   @Router.patch("/users/password")
   async updatePassword(session: SessionDoc, currentPassword: string, newPassword: string) {
     const user = Sessioning.getUser(session);
-    return Authing.updatePassword(user, currentPassword, newPassword);
+    return await Authing.updatePassword(user, currentPassword, newPassword);
   }
 
   @Router.delete("/users")
@@ -70,6 +72,16 @@ class Routes {
     return { msg: "Logged out!" };
   }
 
+  @Router.get("/contentcreators")
+  async getContentCreators() {
+    return await Authing.getUsersByRole(Role.ContentCreator);
+  }
+
+  @Router.get("/regularusers")
+  async getRegularUsers() {
+    return await Authing.getUsersByRole(Role.RegularUser);
+  }
+
   @Router.get("/posts")
   @Router.validate(z.object({ author: z.string().optional() }))
   async getPosts(author?: string) {
@@ -84,9 +96,9 @@ class Routes {
   }
 
   @Router.post("/posts")
-  async createPost(session: SessionDoc, content: string, options?: PostOptions) {
+  async createPost(session: SessionDoc, content: string, category: Category, options?: PostOptions) {
     const user = Sessioning.getUser(session);
-    const created = await Posting.create(user, content, options);
+    const created = await Posting.create(user, content, category, options);
     return { msg: created.msg, post: await Responses.post(created.post) };
   }
 
@@ -117,6 +129,16 @@ class Routes {
     const user = Sessioning.getUser(session);
     const friendOid = (await Authing.getUserByUsername(friend))._id;
     return await Friending.removeFriend(user, friendOid);
+  }
+
+  @Router.post("/follow")
+  async followContentCreator(user1: ObjectId, user2: ObjectId) {
+    if ((await Authing.getUserRole(user1)) === Role.RegularUser) Friending.addFriend(user1, user2);
+  }
+
+  @Router.post("/unfollow")
+  async unfollowContentCreator(user: ObjectId, friend: ObjectId) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) Friending.removeFriend(user, friend);
   }
 
   @Router.get("/friend/requests")
@@ -153,130 +175,257 @@ class Routes {
     return await Friending.rejectRequest(fromOid, user);
   }
 
-  @Router.get("/collections")
-  async getDefaultCollections() {
-    // to be modified after implementing concepts that use these
-    return await [Lifestyle, HealthAndFitness, Entertainment, FoodAndCooking, FashionAndBeauty, EducationAndDIY];
-  }
-
-  // TODO
-  @Router.patch("/posts/:id")
-  // upvote a post
-  async qualityRatePost(session: SessionDoc, id: string) {
-    // if Authenticating.getUserRole((Posting.getPostOwner(p)).username) === ContentCreator
-    //     Posting.incrementQualityRating(p)
-  }
-
-  @Router.post("/follow")
-  async follow(to: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     if Authenticating.getUserRole(otheruser.username) === ContentCreator
-    //         Following.addFollower(user, otheruser)
-    //     else
-    //         Following.addRequest(user, otheruser)
-  }
-
-  @Router.get("/follow")
-  async getFollowers(session: SessionDoc) {
-    // if Authenticating.getUserRole(user.username) === ContentCreator
-    // Following.getFollowers(user)
-  }
-
-  @Router.get("/follow")
-  async getFollowings(session: SessionDoc) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //       Following.getFollowings(user)
-  }
-
-  @Router.post("/trackers")
-  async createTracker(name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     return Tracker-ing.makeTracker(user, name, shared)
-  }
-
   @Router.post("/collections")
-  async createCollection(name: String) {
-    // if d
-    //     Collection-ing.newCollectionWithDeadline(user, parent, d, name)
-    // if not d
-    //     Collection-ing.newCollectionWithoutDeadline(user, parent, name)
+  async makeDefaultCollections(owner: ObjectId) {
+    // the parent of a default collection is not a collection, rather, it is the owner of the collection
+    const lifestyle = await Collectioning.createCollection(owner, owner, "Lifestyle");
+    const health = await Collectioning.createCollection(owner, owner, "HealthAndFitness");
+    const entertainment = await Collectioning.createCollection(owner, owner, "Entertainment");
+    const food = await Collectioning.createCollection(owner, owner, "FoodAndCooking");
+    const fashion = await Collectioning.createCollection(owner, owner, "FashionAndBeauty");
+    const education = await Collectioning.createCollection(owner, owner, "EducationAndDIY");
+    return [lifestyle, health, entertainment, food, fashion, education];
+  }
+
+  @Router.patch("/posts/:id/increment-rating")
+  async incrementPostQuality(id: ObjectId) {
+    await Posting.incrementQualityRating(id);
+  }
+
+  @Router.patch("/posts/:id/decrement-rating")
+  async decrementPostQuality(id: ObjectId) {
+    await Posting.decrementQualityRating(id);
+  }
+
+  @Router.get("/posts/:author")
+  async getAuthorPosts(author: ObjectId) {
+    return await Posting.getByAuthor(author);
+  }
+
+  @Router.patch("/posts/:category")
+  async getPostsInCategory(category: Category) {
+    return await Posting.getByCategory(category);
+  }
+
+  @Router.get("/followers")
+  async getFollowers(user: ObjectId) {
+    return (await Friending.getFriends(user)).filter(async (friend) => (await Authing.getUserRole(friend)) === Role.RegularUser);
+  }
+
+  @Router.get("/followings")
+  async getFollowings(user: ObjectId) {
+    return (await Friending.getFriends(user)).filter(async (friend) => (await Authing.getUserRole(friend)) === Role.ContentCreator);
+  }
+
+  @Router.post("/trackers/create")
+  async createTracker(owner: ObjectId, title: String) {
+    await Trackering.makeTracker(owner, title);
+  }
+
+  @Router.post("/collections/create")
+  async createCollection(owner: ObjectId, parent: ObjectId, title: String, deadline: String) {
+    await Collectioning.createCollection(owner, parent, title, deadline);
+  }
+
+  @Router.get("/trackers")
+  async getAllTrackers(owner: ObjectId) {
+    return await Trackering.getTrackers(owner);
+  }
+
+  @Router.get("/collections")
+  async getAllCollections(owner: ObjectId) {
+    return await Collectioning.getUserCollections(owner);
+  }
+
+  @Router.get("/trackers/:title")
+  /**
+   * Given an owner and title of a tracker, returns trackers of the same title that are shared with the owner.
+   */
+  async getSharedTrackers(owner: ObjectId, title: String) {
+    return await Promise.all(
+      (await Trackering.getSharedTrackers(owner)).filter(async (tracker) => {
+        const trackerObj = await Trackering.getTrackerById(tracker);
+        if (trackerObj) {
+          return trackerObj.title === title;
+        }
+        return false;
+      }),
+    );
+  }
+
+  @Router.get("/collections/:title")
+  /**
+   * Given an owner and title of a collection, returns collections of the same title that are shared with the owner.
+   */
+  async getSharedCollections(owner: ObjectId, title: String) {
+    return await Promise.all(
+      (await Collectioning.getSharedCollections(owner)).filter(async (collection) => {
+        const collectionObj = await Collectioning.getCollectionById(collection);
+        if (collectionObj) {
+          return collectionObj.title === title;
+        }
+        return false;
+      }),
+    );
   }
 
   @Router.post("/trackers/share")
-  async shareTracker(to: string, name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Tracker-ing.shareTracker(user, name, otheruser)
+  async shareTracker(user: ObjectId, to: ObjectId, title: String) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Trackering.shareTracker(user, title, to);
+    }
   }
 
   @Router.post("/collections/share")
-  async shareCollection(to: string, name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Collection-ing.shareCollection(user, name, otheruser)
+  async shareCollection(user: ObjectId, to: ObjectId, title: String) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Collectioning.shareCollection(user, title, to);
+    }
   }
 
-  @Router.post("/trackers/share")
-  async unshareTracker(from: string, name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Tracker-ing.unshareTracker(user, name, otheruser)
+  @Router.post("/trackers/unshare")
+  async unshareTracker(user: ObjectId, from: ObjectId, title: String) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Trackering.unshareTracker(user, title, from);
+    }
   }
 
-  @Router.post("/collections/share")
-  async unshareCollection(from: string, name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Collection-ing.unshareCollection(user, name, otheruser)
+  @Router.post("/collections/unshare")
+  async unshareCollection(user: ObjectId, from: ObjectId, title: String) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Collectioning.unshareCollection(user, title, from);
+    }
   }
 
   @Router.delete("/trackers")
-  async deleteTracker(name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Tracker-ing.deleteTracker(user, name)
-    //     Leveling.updateLevel(user)
+  async deleteTracker(user: ObjectId, title: String) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Trackering.deleteTracker(user, title);
+    }
   }
 
   @Router.delete("/collections")
-  async deleteCollection(name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Collection-ing.deleteCollection(user, name)
+  async deleteCollection(user: ObjectId, title: String) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Collectioning.deleteCollection(user, title);
+    }
   }
 
-  @Router.patch("/trackers")
-  async checkTracker(name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Tracker-ing.checkDay(user, name)
-    //     Leveling.updateLevel(user)
+  @Router.patch("/trackers/:title/check")
+  @Router.validate(z.object({ day: z.number().min(0).max(364) }))
+  async checkTracker(user: ObjectId, title: String, day: number) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Trackering.checkDay(user, title, day);
+      const source = await Promise.all((await Trackering.getTrackers(user)).map(async (tracker) => await Trackering.getTotalCheckedDays(user, tracker.title)));
+      await Leveling.updateExp(user, source);
+    }
   }
 
-  @Router.patch("/trackers")
-  async uncheckTracker(name: String) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Tracker-ing.uncheckDay(user, name)
-    //     Leveling.updateLevel(user)
+  @Router.patch("/trackers/:title/uncheck")
+  @Router.validate(z.object({ day: z.number().min(0).max(364) }))
+  async uncheckTracker(user: ObjectId, title: String, day: number) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Trackering.uncheckDay(user, title, day);
+      const source = await Promise.all((await Trackering.getTrackers(user)).map(async (tracker) => await Trackering.getTotalCheckedDays(user, tracker.title)));
+      await Leveling.updateExp(user, source);
+    }
+  }
+
+  @Router.get("/collections/:id")
+  async getPostsInCollection(id: ObjectId) {
+    await Collectioning.getContent(id);
+  }
+
+  @Router.patch("/collections/add")
+  async addToCollection(user: ObjectId, collectionTitle: String, post: ObjectId) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Collectioning.addToCollection(user, collectionTitle, post);
+      const defaultCategories = ["Lifestyle", "HealthAndFitness", "Entertainment", "FoodAndCooking", "FashionAndBeauty", "EducationAndDIY"];
+      let categories = new Array<number>();
+      for (let category of defaultCategories) {
+        const collections = await Collectioning.getUserCollections(user);
+        let sum = 0;
+        if (!(collections instanceof NotFoundError)) {
+          for (let collection of collections) {
+            sum += await Collectioning.getCollectionLength(user, collection.title);
+          }
+        }
+        categories.push((await Collectioning.getCollectionLength(user, category)) + sum);
+      }
+      await Summarizing.updateSummary(user, categories);
+    }
+  }
+
+  @Router.patch("/collections/remove")
+  async removeFromCollection(user: ObjectId, collectionTitle: String, post: ObjectId) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Collectioning.removeFromCollection(user, collectionTitle, post);
+      const defaultCategories = ["Lifestyle", "HealthAndFitness", "Entertainment", "FoodAndCooking", "FashionAndBeauty", "EducationAndDIY"];
+      let categories = new Array<number>();
+      for (let category of defaultCategories) {
+        const collections = await Collectioning.getUserCollections(user);
+        let sum = 0;
+        if (!(collections instanceof NotFoundError)) {
+          for (let collection of collections) {
+            sum += await Collectioning.getCollectionLength(user, collection.title);
+          }
+        }
+        categories.push((await Collectioning.getCollectionLength(user, category)) + sum);
+      }
+      await Summarizing.updateSummary(user, categories);
+    }
   }
 
   @Router.patch("/collections")
-  async addToCollection(name: String, p: string) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Collection-ing.addToCollection(User, name, p)
-    //     Summarizing.updateSummaries(Collection-ing.getUserDefaultCollectionSizes(user))
-    //     Leveling.updateLevel(user)
+  async updateCollectionDeadline(user: ObjectId, collectionTitle: String, deadline: String) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Collectioning.updateCollectionDeadline(user, collectionTitle, deadline);
+    }
   }
 
-  @Router.patch("/collections")
-  async updateCollectionDeadline(name: String, d: Date) {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Collection-ing.updateCollectionDeadline(user, name, d)
+  @Router.post("/exp")
+  /**
+   * @param user
+   * @returns the total number of checked days across all of the user's trackers
+   */
+  async calculateExp(user: ObjectId) {
+    const source = new Array<number>();
+    const trackers = await Trackering.getTrackers(user);
+    if (trackers) {
+      for (let tracker of trackers) {
+        source.push(await Trackering.getTotalCheckedDays(user, tracker.title));
+        return await Leveling.calculateUserTotalExp(user, source);
+      }
+    }
   }
 
-  @Router.get("/creators")
-  async getAllContentCreators() {
-    // return Authenticating.getAllUsersWithRole(ContentCreator)
+  @Router.get("/level")
+  async getLevel(user: ObjectId) {
+    return await Leveling.getLvl(user);
+  }
+
+  @Router.get("/exp")
+  async getExp(user: ObjectId) {
+    return await Leveling.getExp(user);
   }
 
   @Router.post("/explore")
-  async recommendContent() {
-    // if Authenticating.getUserRole(user.username) === RegularUser
-    //     Summarizing.updateIfDataChanged(Collection-ing.getUserDefaultCollectionSizes(user))
-    //     return findLowActivityCategory(Collection-ing.getUserDefaultCollectionSizes(user))
+  /**
+   * Given a user, recommends a category of content for the user by returning a category in which the user has
+   * the least amount of saved posts.
+   */
+  async recommendContent(user: ObjectId) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      const category = Summarizing.findLowActivityCategory(user);
+      return await category;
+    }
+  }
+
+  @Router.get("/summary")
+  async getSummary(user: ObjectId) {
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      return await Summarizing.getSummary(user);
+    }
   }
 }
 

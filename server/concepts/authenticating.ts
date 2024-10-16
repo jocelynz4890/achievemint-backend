@@ -2,9 +2,15 @@ import { ObjectId } from "mongodb";
 import DocCollection, { BaseDoc } from "../framework/doc";
 import { BadValuesError, NotAllowedError, NotFoundError } from "./errors";
 
+export enum Role {
+  ContentCreator,
+  RegularUser,
+}
+
 export interface UserDoc extends BaseDoc {
   username: string;
   password: string;
+  role: Role;
 }
 
 /**
@@ -23,9 +29,9 @@ export default class AuthenticatingConcept {
     void this.users.collection.createIndex({ username: 1 });
   }
 
-  async create(username: string, password: string) {
+  async create(username: string, password: string, role: Role) {
     await this.assertGoodCredentials(username, password);
-    const _id = await this.users.createOne({ username, password });
+    const _id = await this.users.createOne({ username, password, role });
     return { msg: "User created successfully!", user: await this.users.readOne({ _id }) };
   }
 
@@ -49,6 +55,18 @@ export default class AuthenticatingConcept {
       throw new NotFoundError(`User not found!`);
     }
     return this.redactPassword(user);
+  }
+
+  async getUsersByRole(role: Role) {
+    return await this.users.readMany({ role });
+  }
+
+  async getUserRole(_id: ObjectId) {
+    const user = await this.users.readOne({ _id });
+    if (user === null) {
+      throw new NotFoundError(`User not found!`);
+    }
+    return user.role;
   }
 
   async idsToUsernames(ids: ObjectId[]) {

@@ -78,7 +78,7 @@ export default class FriendingConcept {
     return friendships.map((friendship) => (friendship.user1.toString() === user.toString() ? friendship.user2 : friendship.user1));
   }
 
-  private async addFriend(user1: ObjectId, user2: ObjectId) {
+  async addFriend(user1: ObjectId, user2: ObjectId) {
     void this.friends.createOne({ user1, user2 });
   }
 

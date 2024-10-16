@@ -3,6 +3,8 @@ import { ObjectId } from "mongodb";
 import DocCollection, { BaseDoc } from "../framework/doc";
 import { NotAllowedError, NotFoundError } from "./errors";
 
+import { Category } from "../app";
+
 export interface PostOptions {
   backgroundColor?: string;
 }
@@ -10,11 +12,13 @@ export interface PostOptions {
 export interface PostDoc extends BaseDoc {
   author: ObjectId;
   content: string;
+  quality_rating: number;
+  category: Category;
   options?: PostOptions;
 }
 
 /**
- * concept: Posting [Author]
+ * concept: Posting [Content, Categories]
  */
 export default class PostingConcept {
   public readonly posts: DocCollection<PostDoc>;
@@ -26,9 +30,30 @@ export default class PostingConcept {
     this.posts = new DocCollection<PostDoc>(collectionName);
   }
 
-  async create(author: ObjectId, content: string, options?: PostOptions) {
-    const _id = await this.posts.createOne({ author, content, options });
+  async create(author: ObjectId, content: string, category: Category, options?: PostOptions) {
+    const quality_rating = 0;
+    const _id = await this.posts.createOne({ author, content, quality_rating, category, options });
     return { msg: "Post successfully created!", post: await this.posts.readOne({ _id }) };
+  }
+
+  async incrementQualityRating(_id: ObjectId) {
+    const post = await this.posts.readOne({ _id });
+    if (!post) {
+      throw new NotFoundError(`Post ${_id} does not exist!`);
+    }
+    const quality_rating = post.quality_rating + 1;
+    await this.posts.partialUpdateOne({ _id }, { quality_rating });
+    return { msg: "Quality rating of post increased!" };
+  }
+
+  async decrementQualityRating(_id: ObjectId) {
+    const post = await this.posts.readOne({ _id });
+    if (!post) {
+      throw new NotFoundError(`Post ${_id} does not exist!`);
+    }
+    const quality_rating = post.quality_rating - 1;
+    await this.posts.partialUpdateOne({ _id }, { quality_rating });
+    return { msg: "Quality rating of post decreased!" };
   }
 
   async getPosts() {
@@ -38,6 +63,10 @@ export default class PostingConcept {
 
   async getByAuthor(author: ObjectId) {
     return await this.posts.readMany({ author });
+  }
+
+  async getByCategory(category: Category) {
+    return await this.posts.readMany({ category });
   }
 
   async update(_id: ObjectId, content?: string, options?: PostOptions) {
