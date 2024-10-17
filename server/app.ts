@@ -15,20 +15,21 @@ export const Posting = new PostingConcept("posts");
 export const Friending = new FriendingConcept("friends");
 
 export enum Category {
-  Lifestyle,
-  HealthAndFitness,
-  Entertainment,
-  FoodAndCooking,
-  FashionAndBeauty,
-  EducationAndDIY,
+  Root = "Root",
+  Lifestyle = "Lifestyle",
+  HealthAndFitness = "HealthAndFitness",
+  Entertainment = "Entertainment",
+  FoodAndCooking = "FoodAndCooking",
+  FashionAndBeauty = "FashionAndBeauty",
+  EducationAndDIY = "EducationAndDIY",
 }
-export type CategoryToIndex = {
-  Lifestyle: 0;
-  HealthAndFitness: 1;
-  Entertainment: 2;
-  FoodAndCooking: 3;
-  FashionAndBeauty: 4;
-  EducationAndDIY: 5;
+export const IndexToCategory: { [key: number]: string } = {
+  0: "Lifestyle",
+  1: "HealthAndFitness",
+  2: "Entertainment",
+  3: "FoodAndCooking",
+  4: "FashionAndBeauty",
+  5: "EducationAndDIY",
 };
 export const Lifestyle = new CollectioningConcept("lifestyle"); // default collection
 export const HealthAndFitness = new CollectioningConcept("health"); // default collection

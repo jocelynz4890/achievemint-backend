@@ -2,7 +2,7 @@ import { ObjectId } from "mongodb";
 
 import { Router, getExpressRouter } from "./framework/router";
 
-import { Authing, Category, Collectioning, Friending, Leveling, Posting, Sessioning, Summarizing, Trackering } from "./app";
+import { Authing, Category, Collectioning, Friending, IndexToCategory, Leveling, Posting, Sessioning, Summarizing, Trackering } from "./app";
 import { Role } from "./concepts/authenticating";
 import { PostOptions } from "./concepts/posting";
 import { SessionDoc } from "./concepts/sessioning";
@@ -10,6 +10,12 @@ import Responses from "./responses";
 
 import { z } from "zod";
 import { NotFoundError } from "./concepts/errors";
+
+const CategorySchema = z.enum([Category.Lifestyle, Category.HealthAndFitness, Category.Entertainment, Category.FoodAndCooking, Category.FashionAndBeauty, Category.EducationAndDIY]);
+const RoleSchema = z.enum([Role.RegularUser, Role.ContentCreator]);
+const PostOptionsSchema = z.object({
+  backgroundColor: z.string().optional(),
+});
 
 /**
  * Web server routes for the app. Implements synchronizations between concepts.
@@ -36,6 +42,7 @@ class Routes {
 
   @Router.post("/users")
   async createUser(session: SessionDoc, username: string, password: string, role: Role) {
+    console.log("Create user: session", session, "not session", username, password, role);
     Sessioning.isLoggedOut(session);
     return await Authing.create(username, password, role);
   }
@@ -97,6 +104,10 @@ class Routes {
 
   @Router.post("/posts")
   async createPost(session: SessionDoc, content: string, category: Category, options?: PostOptions) {
+    console.log("Session:", session, content, category, options);
+    // If category is not one of the specified categories, the post gets automatically assigned to the lifestyle category.
+    const defaultCategories = ["Lifestyle", "HealthAndFitness", "Entertainment", "FoodAndCooking", "FashionAndBeauty", "EducationAndDIY"];
+    if (defaultCategories.filter((str) => str === category).length <= 0) category = Category.Lifestyle;
     const user = Sessioning.getUser(session);
     const created = await Posting.create(user, content, category, options);
     return { msg: created.msg, post: await Responses.post(created.post) };
@@ -138,7 +149,9 @@ class Routes {
 
   @Router.post("/unfollow")
   async unfollowContentCreator(user: ObjectId, friend: ObjectId) {
-    if ((await Authing.getUserRole(user)) === Role.RegularUser) Friending.removeFriend(user, friend);
+    if ((await Authing.getUserRole(user)) === Role.RegularUser) {
+      await Friending.removeFriend(user, friend);
+    }
   }
 
   @Router.get("/friend/requests")
@@ -176,25 +189,25 @@ class Routes {
   }
 
   @Router.post("/collections")
-  async makeDefaultCollections(owner: ObjectId) {
-    // the parent of a default collection is not a collection, rather, it is the owner of the collection
-    const lifestyle = await Collectioning.createCollection(owner, owner, "Lifestyle");
-    const health = await Collectioning.createCollection(owner, owner, "HealthAndFitness");
-    const entertainment = await Collectioning.createCollection(owner, owner, "Entertainment");
-    const food = await Collectioning.createCollection(owner, owner, "FoodAndCooking");
-    const fashion = await Collectioning.createCollection(owner, owner, "FashionAndBeauty");
-    const education = await Collectioning.createCollection(owner, owner, "EducationAndDIY");
+  async makeDefaultCollections(session: SessionDoc) {
+    const owner = Sessioning.getUser(session);
+    const lifestyle = await Collectioning.createCollection(owner, Category.Root, "Lifestyle");
+    const health = await Collectioning.createCollection(owner, Category.Root, "HealthAndFitness");
+    const entertainment = await Collectioning.createCollection(owner, Category.Root, "Entertainment");
+    const food = await Collectioning.createCollection(owner, Category.Root, "FoodAndCooking");
+    const fashion = await Collectioning.createCollection(owner, Category.Root, "FashionAndBeauty");
+    const education = await Collectioning.createCollection(owner, Category.Root, "EducationAndDIY");
     return [lifestyle, health, entertainment, food, fashion, education];
   }
 
   @Router.patch("/posts/:id/increment-rating")
   async incrementPostQuality(id: ObjectId) {
-    await Posting.incrementQualityRating(id);
+    return await Posting.incrementQualityRating(id);
   }
 
   @Router.patch("/posts/:id/decrement-rating")
   async decrementPostQuality(id: ObjectId) {
-    await Posting.decrementQualityRating(id);
+    return await Posting.decrementQualityRating(id);
   }
 
   @Router.get("/posts/:author")
@@ -203,37 +216,47 @@ class Routes {
   }
 
   @Router.patch("/posts/:category")
+  @Router.validate(z.object({ category: CategorySchema }))
   async getPostsInCategory(category: Category) {
     return await Posting.getByCategory(category);
   }
 
   @Router.get("/followers")
-  async getFollowers(user: ObjectId) {
+  async getFollowers(session: SessionDoc) {
+    const user = Sessioning.getUser(session);
     return (await Friending.getFriends(user)).filter(async (friend) => (await Authing.getUserRole(friend)) === Role.RegularUser);
   }
 
   @Router.get("/followings")
-  async getFollowings(user: ObjectId) {
+  async getFollowings(session: SessionDoc) {
+    const user = Sessioning.getUser(session);
     return (await Friending.getFriends(user)).filter(async (friend) => (await Authing.getUserRole(friend)) === Role.ContentCreator);
   }
 
   @Router.post("/trackers/create")
-  async createTracker(owner: ObjectId, title: String) {
-    await Trackering.makeTracker(owner, title);
+  async createTracker(session: SessionDoc, title: String) {
+    const owner = Sessioning.getUser(session);
+    return await Trackering.makeTracker(owner, title);
   }
 
   @Router.post("/collections/create")
-  async createCollection(owner: ObjectId, parent: ObjectId, title: String, deadline: String) {
-    await Collectioning.createCollection(owner, parent, title, deadline);
+  async createCollection(session: SessionDoc, parent: Category, title: String, deadline: String) {
+    const defaultCategories = ["Lifestyle", "HealthAndFitness", "Entertainment", "FoodAndCooking", "FashionAndBeauty", "EducationAndDIY"];
+    // if parent is not a default Category, it gets put into the default category Lifestyle
+    if (defaultCategories.filter((str) => str === parent).length <= 0) parent = Category.Lifestyle;
+    const owner = Sessioning.getUser(session);
+    return await Collectioning.createCollection(owner, parent, title, deadline);
   }
 
   @Router.get("/trackers")
-  async getAllTrackers(owner: ObjectId) {
+  async getAllTrackers(session: SessionDoc) {
+    const owner = Sessioning.getUser(session);
     return await Trackering.getTrackers(owner);
   }
 
   @Router.get("/collections")
-  async getAllCollections(owner: ObjectId) {
+  async getAllCollections(session: SessionDoc) {
+    const owner = Sessioning.getUser(session);
     return await Collectioning.getUserCollections(owner);
   }
 
@@ -270,50 +293,57 @@ class Routes {
   }
 
   @Router.post("/trackers/share")
-  async shareTracker(user: ObjectId, to: ObjectId, title: String) {
+  async shareTracker(session: SessionDoc, to: ObjectId, title: String) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
-      await Trackering.shareTracker(user, title, to);
+      return await Trackering.shareTracker(user, title, to);
     }
   }
 
   @Router.post("/collections/share")
-  async shareCollection(user: ObjectId, to: ObjectId, title: String) {
+  async shareCollection(session: SessionDoc, to: ObjectId, title: String) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
-      await Collectioning.shareCollection(user, title, to);
+      return await Collectioning.shareCollection(user, title, to);
     }
   }
 
   @Router.post("/trackers/unshare")
-  async unshareTracker(user: ObjectId, from: ObjectId, title: String) {
+  async unshareTracker(session: SessionDoc, from: ObjectId, title: String) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
-      await Trackering.unshareTracker(user, title, from);
+      return await Trackering.unshareTracker(user, title, from);
     }
   }
 
   @Router.post("/collections/unshare")
-  async unshareCollection(user: ObjectId, from: ObjectId, title: String) {
+  async unshareCollection(session: SessionDoc, from: ObjectId, title: String) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
-      await Collectioning.unshareCollection(user, title, from);
+      return await Collectioning.unshareCollection(user, title, from);
     }
   }
 
   @Router.delete("/trackers")
-  async deleteTracker(user: ObjectId, title: String) {
+  async deleteTracker(session: SessionDoc, title: String) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
-      await Trackering.deleteTracker(user, title);
+      return await Trackering.deleteTracker(user, title);
     }
   }
 
   @Router.delete("/collections")
-  async deleteCollection(user: ObjectId, title: String) {
+  async deleteCollection(session: SessionDoc, title: String) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
-      await Collectioning.deleteCollection(user, title);
+      return await Collectioning.deleteCollection(user, title);
     }
   }
 
   @Router.patch("/trackers/:title/check")
-  @Router.validate(z.object({ day: z.number().min(0).max(364) }))
-  async checkTracker(user: ObjectId, title: String, day: number) {
+  @Router.validate(z.object({ title: z.string(), day: z.number().min(0).max(364) }))
+  async checkTracker(session: SessionDoc, title: String, day: number) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
       await Trackering.checkDay(user, title, day);
       const source = await Promise.all((await Trackering.getTrackers(user)).map(async (tracker) => await Trackering.getTotalCheckedDays(user, tracker.title)));
@@ -322,8 +352,9 @@ class Routes {
   }
 
   @Router.patch("/trackers/:title/uncheck")
-  @Router.validate(z.object({ day: z.number().min(0).max(364) }))
-  async uncheckTracker(user: ObjectId, title: String, day: number) {
+  @Router.validate(z.object({ title: z.string(), day: z.number().min(0).max(364) }))
+  async uncheckTracker(session: SessionDoc, title: String, day: number) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
       await Trackering.uncheckDay(user, title, day);
       const source = await Promise.all((await Trackering.getTrackers(user)).map(async (tracker) => await Trackering.getTotalCheckedDays(user, tracker.title)));
@@ -333,11 +364,12 @@ class Routes {
 
   @Router.get("/collections/:id")
   async getPostsInCollection(id: ObjectId) {
-    await Collectioning.getContent(id);
+    return await Collectioning.getContent(id);
   }
 
   @Router.patch("/collections/add")
-  async addToCollection(user: ObjectId, collectionTitle: String, post: ObjectId) {
+  async addToCollection(session: SessionDoc, collectionTitle: String, post: ObjectId) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
       await Collectioning.addToCollection(user, collectionTitle, post);
       const defaultCategories = ["Lifestyle", "HealthAndFitness", "Entertainment", "FoodAndCooking", "FashionAndBeauty", "EducationAndDIY"];
@@ -352,12 +384,13 @@ class Routes {
         }
         categories.push((await Collectioning.getCollectionLength(user, category)) + sum);
       }
-      await Summarizing.updateSummary(user, categories);
+      return await Summarizing.updateSummary(user, categories);
     }
   }
 
   @Router.patch("/collections/remove")
-  async removeFromCollection(user: ObjectId, collectionTitle: String, post: ObjectId) {
+  async removeFromCollection(session: SessionDoc, collectionTitle: String, post: ObjectId) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
       await Collectioning.removeFromCollection(user, collectionTitle, post);
       const defaultCategories = ["Lifestyle", "HealthAndFitness", "Entertainment", "FoodAndCooking", "FashionAndBeauty", "EducationAndDIY"];
@@ -372,14 +405,15 @@ class Routes {
         }
         categories.push((await Collectioning.getCollectionLength(user, category)) + sum);
       }
-      await Summarizing.updateSummary(user, categories);
+      return await Summarizing.updateSummary(user, categories);
     }
   }
 
   @Router.patch("/collections")
-  async updateCollectionDeadline(user: ObjectId, collectionTitle: String, deadline: String) {
+  async updateCollectionDeadline(session: SessionDoc, collectionTitle: String, deadline: String) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
-      await Collectioning.updateCollectionDeadline(user, collectionTitle, deadline);
+      return await Collectioning.updateCollectionDeadline(user, collectionTitle, deadline);
     }
   }
 
@@ -388,7 +422,8 @@ class Routes {
    * @param user
    * @returns the total number of checked days across all of the user's trackers
    */
-  async calculateExp(user: ObjectId) {
+  async calculateExp(session: SessionDoc) {
+    const user = Sessioning.getUser(session);
     const source = new Array<number>();
     const trackers = await Trackering.getTrackers(user);
     if (trackers) {
@@ -414,10 +449,12 @@ class Routes {
    * Given a user, recommends a category of content for the user by returning a category in which the user has
    * the least amount of saved posts.
    */
-  async recommendContent(user: ObjectId) {
+  async recommendContent(session: SessionDoc) {
+    const user = Sessioning.getUser(session);
     if ((await Authing.getUserRole(user)) === Role.RegularUser) {
       const category = Summarizing.findLowActivityCategory(user);
-      return await category;
+      const idx = await category;
+      return IndexToCategory[idx];
     }
   }
 

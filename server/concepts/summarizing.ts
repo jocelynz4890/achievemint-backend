@@ -34,9 +34,9 @@ export default class SummarizingConcept {
     let summary = await this.summaries.readOne({ user });
     if (!summary) {
       categories = new Array(categories.length).fill(0);
-      await this.summaries.createOne({ user, categories });
+      return await this.summaries.createOne({ user, categories });
     } else {
-      await this.summaries.partialUpdateOne({ user }, { categories });
+      return await this.summaries.partialUpdateOne({ user }, { categories });
     }
   }
 

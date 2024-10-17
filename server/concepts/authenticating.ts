@@ -3,8 +3,8 @@ import DocCollection, { BaseDoc } from "../framework/doc";
 import { BadValuesError, NotAllowedError, NotFoundError } from "./errors";
 
 export enum Role {
-  ContentCreator,
-  RegularUser,
+  ContentCreator = "ContentCreator",
+  RegularUser = "RegularUser",
 }
 
 export interface UserDoc extends BaseDoc {
@@ -31,6 +31,7 @@ export default class AuthenticatingConcept {
 
   async create(username: string, password: string, role: Role) {
     await this.assertGoodCredentials(username, password);
+    if (role !== Role.ContentCreator && role !== Role.RegularUser) return { msg: "Role must be ContentCreator or RegularUser!" };
     const _id = await this.users.createOne({ username, password, role });
     return { msg: "User created successfully!", user: await this.users.readOne({ _id }) };
   }
@@ -124,6 +125,7 @@ export default class AuthenticatingConcept {
   }
 
   private async assertGoodCredentials(username: string, password: string) {
+    console.log(username, password);
     if (!username || !password) {
       throw new BadValuesError("Username and password must be non-empty!");
     }

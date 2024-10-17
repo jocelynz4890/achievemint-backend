@@ -1,11 +1,12 @@
 import { ObjectId } from "mongodb";
 
+import { Category } from "../app";
 import DocCollection, { BaseDoc } from "../framework/doc";
 import { NotAllowedError, NotFoundError } from "./errors";
 
 export interface CollectionDoc extends BaseDoc {
   owner: ObjectId;
-  parent: ObjectId;
+  parent: Category;
   shared: Array<ObjectId>;
   title: String;
   contents: Array<ObjectId>;
@@ -24,6 +25,10 @@ export default class CollectioningConcept {
    */
   constructor(collectionName: string) {
     this.collections = new DocCollection<CollectionDoc>(collectionName);
+  }
+
+  async getSubCollections(owner: ObjectId, parent: Category) {
+    return this.collections.readMany({ owner, parent });
   }
 
   async getUserCollections(owner: ObjectId) {
@@ -66,7 +71,7 @@ export default class CollectioningConcept {
     throw new NotFoundError("Collection could not be found!");
   }
 
-  async createCollection(owner: ObjectId, parent: ObjectId, title: String, deadline: String = "") {
+  async createCollection(owner: ObjectId, parent: Category, title: String, deadline: String = "") {
     const sameTitle = await this.collections.readMany({ owner, title });
     if (sameTitle.length > 0) {
       throw new NotAllowedError("You already have a collection with the same title!");

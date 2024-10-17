@@ -26,7 +26,7 @@ export default class TrackeringConcept {
 
   async makeTracker(owner: ObjectId, title: String) {
     const shared = new Array<ObjectId>();
-    const days = new Array<Boolean>(360); // only tracks the past year of data
+    const days = new Array<Boolean>(360).fill(false); // only tracks the past year of data
     const _id = await this.trackers.createOne({ owner, shared, title, days });
     return { msg: "Tracker successfully created!", tracker: await this.trackers.readOne({ _id }) };
   }
